@@ -1,10 +1,14 @@
 import React, { useEffect } from "react";
 import { IconX, IconUpload, IconChevronLeft, IconChevronRight } from "./Icons";
+import { resolveMediaUrl } from "../services/api";
 
 // Usage: <MediaLightbox items={[{type,url}, ...]} index={0} onClose={fn} onNavigate={setIndex} />
 // Backward compatible with the old single-`media` prop.
 export default function MediaLightbox({ media, items, index = 0, onClose, onNavigate }) {
-  const list = items && items.length > 0 ? items : media ? [media] : [];
+  const list = (items && items.length > 0 ? items : media ? [media] : []).map((it) => ({
+    ...it,
+    url: resolveMediaUrl(it.url),
+  }));
   const current = list[index];
 
   useEffect(() => {

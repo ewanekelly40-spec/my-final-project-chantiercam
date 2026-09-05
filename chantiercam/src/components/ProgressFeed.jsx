@@ -8,6 +8,7 @@ import MediaLightbox from "./MediaLightbox";
 import { IconPlus, IconCamera, IconUpload, IconTrash, IconX } from "./Icons";
 import { uid, formatDate, fileToDataUrl, isDirty } from "../utils/helpers";
 import { useUnsavedGuard, confirmDiscard } from "../utils/useUnsavedGuard";
+import api, { resolveMediaUrl } from "../services/api";
 
 const emptyForm = { title: "", phaseId: "", note: "", date: new Date().toISOString().slice(0, 10) };
 
@@ -58,6 +59,22 @@ export default function ProgressFeed({ projectId, canAdd }) {
     if (files.length === 0) return;
     setUploading(true);
     try {
+      // Try backend upload first
+      const uploadRes = await api.uploadFiles(files);
+      if (uploadRes && uploadRes.ok && uploadRes.data) {
+        setMedia((m) => [...m, ...uploadRes.data]);
+      } else {
+        // Fallback to data URL
+        const items = await Promise.all(
+          files.map(async (file) => ({
+            type: file.type.startsWith("video") ? "video" : "image",
+            url: await fileToDataUrl(file),
+          }))
+        );
+        setMedia((m) => [...m, ...items]);
+      }
+    } catch (err) {
+      console.warn("Upload fallback to data URLs:", err);
       const items = await Promise.all(
         files.map(async (file) => ({
           type: file.type.startsWith("video") ? "video" : "image",
@@ -98,7 +115,9 @@ export default function ProgressFeed({ projectId, canAdd }) {
     });
 
     // notify all users of this project
-    store.projectUsers.filter((u) => u.projectId === projectId).forEach((u) => {
+    const project = store.projects.find((p) => p.id === projectId);
+    const projectUsers = store.projectUsers.filter((u) => u.projectId === projectId);
+    projectUsers.forEach((u) => {
       addItem("notifications", {
         id: uid("notif"),
         projectId,
@@ -110,41 +129,69 @@ export default function ProgressFeed({ projectId, canAdd }) {
       });
     });
 
-    setModalOpen(false);
-    setForm(emptyForm);
-    setMedia([]);
-    setSubmitting(false);
     showToast(t("addUpdate"));
+    setForm(emptyForm);
+    setInitialForm(emptyForm);
+    setMedia([]);
+    setModalOpen(false);
+    setSubmitting(false);
   }
 
-  function handleDelete() {
-    removeItem("progress", confirmDelete);
+  function handleDelete(id) {
+    removeItem("progress", id);
     setConfirmDelete(null);
-    showToast("Update deleted.");
+    showToast(t("delete"));
   }
 
   return (
     <div>
-      {canAdd && (
-        <div className="page-head" style={{ marginBottom: 16 }}>
-          <div />
-          <button className="btn btn-primary" onClick={() => { setForm(emptyForm); setInitialForm(emptyForm); setMedia([]); setModalOpen(true); }}>
-            <IconPlus style={{ width: 17, height: 17 }} /> {t("addUpdate")}
-          </button>
+      <div className="flex-between" style={{ marginBottom: 16 }}>
+        <div>
+          <h3>{t("progressFeed")}</h3>
+          <p className="text-muted" style={{ fontSize: 13 }}>
+            {updates.length} {t("progress").toLowerCase()}
+          </p>
         </div>
-      )}
+        {canAdd && (
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => {
+              setForm(emptyForm);
+              setInitialForm(emptyForm);
+              setMedia([]);
+              setModalOpen(true);
+            }}
+          >
+            <IconPlus style={{ width: 14, height: 14 }} /> {t("addUpdate")}
+          </button>
+        )}
+      </div>
 
-      {phases.length > 0 && allUpdates.length > 0 && (
-        <div className="tabs-row">
-          <button className={`tab-btn ${phaseFilter === "all" ? "active" : ""}`} onClick={() => setPhaseFilter("all")}>{t("filterByPhase")}</button>
+      {phases.length > 0 && (
+        <div className="tab-pills" style={{ marginBottom: 16, overflowX: "auto" }}>
+          <button
+            className={`tab-btn ${phaseFilter === "all" ? "active" : ""}`}
+            onClick={() => setPhaseFilter("all")}
+          >
+            {t("allPhases")}
+          </button>
           {phases.map((p) => (
-            <button key={p.id} className={`tab-btn ${phaseFilter === p.id ? "active" : ""}`} onClick={() => setPhaseFilter(p.id)}>{p.name}</button>
+            <button
+              key={p.id}
+              className={`tab-btn ${phaseFilter === p.id ? "active" : ""}`}
+              onClick={() => setPhaseFilter(p.id)}
+            >
+              {p.name}
+            </button>
           ))}
         </div>
       )}
 
       {updates.length === 0 ? (
-        <div className="card empty-state"><IconCamera /><h4>{t("noUpdates")}</h4></div>
+        <div className="card empty-state">
+          <IconCamera />
+          <h4>{t("noUpdates")}</h4>
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {updates.map((u) => (
@@ -153,7 +200,11 @@ export default function ProgressFeed({ projectId, canAdd }) {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15.5 }}>{u.title}</div>
                   <div className="text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
-                    {(u.phase || phaseName(u.phaseId)) && <span className="badge badge-blue" style={{ marginRight: 8 }}>{u.phase || phaseName(u.phaseId)}</span>}
+                    {(u.phase || phaseName(u.phaseId)) && (
+                      <span className="badge badge-blue" style={{ marginRight: 8 }}>
+                        {u.phase || phaseName(u.phaseId)}
+                      </span>
+                    )}
                     {formatDate(u.date)}
                   </div>
                 </div>
@@ -174,7 +225,11 @@ export default function ProgressFeed({ projectId, canAdd }) {
                       style={{ cursor: "zoom-in" }}
                       onClick={() => setLightbox({ items: u.media, index: i })}
                     >
-                      {m.type === "video" ? <video src={m.url} muted /> : <img src={m.url} alt={u.title} />}
+                      {m.type === "video" ? (
+                        <video src={resolveMediaUrl(m.url)} muted />
+                      ) : (
+                        <img src={resolveMediaUrl(m.url)} alt={u.title} />
+                      )}
                     </div>
                   ))}
                 </div>

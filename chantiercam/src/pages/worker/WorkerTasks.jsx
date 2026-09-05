@@ -9,6 +9,7 @@ import { TaskStatusBadge, PriorityBadge } from "../../components/StatusBadge";
 import { IconCheckSquare, IconCalendar, IconCheck, IconUpload, IconX, IconCamera } from "../../components/Icons";
 import { uid, formatDate, fileToDataUrl, isDirty } from "../../utils/helpers";
 import { useUnsavedGuard, confirmDiscard } from "../../utils/useUnsavedGuard";
+import api, { resolveMediaUrl } from "../../services/api";
 
 const FILTERS = ["all", "pending", "accepted", "in_progress", "submitted", "completed"];
 
@@ -35,7 +36,7 @@ export default function WorkerTasks() {
   const phases = store.phases.filter((p) => p.projectId === activeProjectId);
 
   const tasks = store.tasks
-    .filter((tk) => tk.projectId === activeProjectId && tk.assignedTo === currentUser.id)
+    .filter((tk) => tk.projectId === activeProjectId && tk.assignedTo === currentUser?.id)
     .filter((tk) => filter === "all" || tk.status === filter)
     .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
@@ -44,11 +45,15 @@ export default function WorkerTasks() {
   }
 
   function notifyManager(project, title, message) {
+    if (!project) return;
     addItem("notifications", {
       id: uid("notif"),
       projectId: project.id,
       userId: project.managerId,
-      title, message, read: false, createdAt: new Date().toISOString(),
+      title,
+      message,
+      read: false,
+      createdAt: new Date().toISOString(),
     });
   }
 
@@ -58,8 +63,12 @@ export default function WorkerTasks() {
 
   function acceptTask(tk) {
     const project = store.projects.find((p) => p.id === tk.projectId);
-    updateItem("tasks", tk.id, { status: "accepted", updatedAt: new Date().toISOString(), history: pushHistory(tk, "accepted") });
-    notifyManager(project, "Task accepted", `${currentUser.name} accepted: ${tk.title}`);
+    updateItem("tasks", tk.id, {
+      status: "accepted",
+      updatedAt: new Date().toISOString(),
+      history: pushHistory(tk, "accepted"),
+    });
+    notifyManager(project, "Task accepted", `${currentUser?.name} accepted: ${tk.title}`);
     showToast(t("accept"));
   }
 
@@ -88,8 +97,25 @@ export default function WorkerTasks() {
     if (files.length === 0) return;
     setUploading(true);
     try {
+      const uploadRes = await api.uploadFiles(files);
+      if (uploadRes && uploadRes.ok && uploadRes.data) {
+        setMedia((m) => [...m, ...uploadRes.data]);
+      } else {
+        const items = await Promise.all(
+          files.map(async (file) => ({
+            type: file.type.startsWith("video") ? "video" : "image",
+            url: await fileToDataUrl(file),
+          }))
+        );
+        setMedia((m) => [...m, ...items]);
+      }
+    } catch (err) {
+      console.warn("Upload fallback to data URL:", err);
       const items = await Promise.all(
-        files.map(async (file) => ({ type: file.type.startsWith("video") ? "video" : "image", url: await fileToDataUrl(file) }))
+        files.map(async (file) => ({
+          type: file.type.startsWith("video") ? "video" : "image",
+          url: await fileToDataUrl(file),
+        }))
       );
       setMedia((m) => [...m, ...items]);
     } finally {
@@ -102,10 +128,13 @@ export default function WorkerTasks() {
     setSubmitting(true);
     const project = store.projects.find((p) => p.id === submitTask.projectId);
     updateItem("tasks", submitTask.id, {
-      status: "submitted", proposal, proof: media, updatedAt: new Date().toISOString(),
+      status: "submitted",
+      proposal,
+      proof: media,
+      updatedAt: new Date().toISOString(),
       history: pushHistory(submitTask, "submitted"),
     });
-    notifyManager(project, "Work submitted", `${currentUser.name} submitted work for: ${submitTask.title}`);
+    notifyManager(project, "Work submitted", `${currentUser?.name} submitted work for: ${submitTask.title}`);
     showToast(t("submitWork"));
     setSubmitTask(null);
     setSubmitting(false);
@@ -146,7 +175,7 @@ export default function WorkerTasks() {
                 <div className="media-thumbs">
                   {tk.proof.map((m, i) => (
                     <div className="thumb" key={i} style={{ cursor: "zoom-in" }} onClick={() => setLightbox({ items: tk.proof, index: i })}>
-                      {m.type === "video" ? <video src={m.url} muted /> : <img src={m.url} alt="proof" />}
+                      {m.type === "video" ? <video src={resolveMediaUrl(m.url)} muted /> : <img src={resolveMediaUrl(m.url)} alt="proof" />}
                     </div>
                   ))}
                 </div>

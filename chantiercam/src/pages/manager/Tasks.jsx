@@ -10,6 +10,7 @@ import { TaskStatusBadge, PriorityBadge } from "../../components/StatusBadge";
 import { IconPlus, IconCheckSquare, IconCalendar, IconUser, IconTrash, IconCheck, IconXCircle, IconEdit } from "../../components/Icons";
 import { uid, formatDate, timeAgo, isDirty } from "../../utils/helpers";
 import { useUnsavedGuard, confirmDiscard } from "../../utils/useUnsavedGuard";
+import { resolveMediaUrl } from "../../services/api";
 
 const emptyForm = { title: "", description: "", assignedTo: "", phaseId: "", priority: "medium", dueDate: "" };
 const FILTERS = ["all", "pending", "accepted", "in_progress", "submitted", "completed"];
@@ -222,7 +223,7 @@ export default function Tasks() {
                   <div className="media-thumbs">
                     {tk.proof.map((m, i) => (
                       <div className="thumb" key={i} style={{ cursor: "zoom-in" }} onClick={() => setLightbox({ items: tk.proof, index: i })}>
-                        {m.type === "video" ? <video src={m.url} muted /> : <img src={m.url} alt="proof" />}
+                        {m.type === "video" ? <video src={resolveMediaUrl(m.url)} muted /> : <img src={resolveMediaUrl(m.url)} alt="proof" />}
                       </div>
                     ))}
                   </div>

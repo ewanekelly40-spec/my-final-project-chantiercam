@@ -1,0 +1,11 @@
+{
+  "name": "my-final-project-chantiercam",
+  "version": "1.0.0",
+  "description": "ChantierCam - Full-Stack Construction Site Management Platform (React + Express + MySQL)",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd chantiercam && npm run dev",
+    "seed": "cd backend && npm run seed"
+  }
+}
